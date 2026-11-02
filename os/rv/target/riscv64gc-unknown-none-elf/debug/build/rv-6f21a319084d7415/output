@@ -1,0 +1,2 @@
+cargo:rustc-link-arg=-T/home/xtsang/kernel_bsod/os/rv/src/linker.ld
+cargo:rerun-if-changed=src/linker.ld

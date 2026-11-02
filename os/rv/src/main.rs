@@ -5,6 +5,10 @@
 mod uart;
 mod shutdown;
 mod sync;
+#[cfg(feature = "test")]
+mod tests;
+mod arch;
+mod trap;
 
 use core::arch::global_asm;
 use core::panic::PanicInfo;
@@ -25,7 +29,13 @@ fn clear_bss() {
 #[unsafe(no_mangle)]
 extern "C" fn rust_main(hart_id: usize, dtb: usize) -> ! {
     clear_bss();
+    trap::init();
     println!("kernel_bsod rv {} (hart {hart_id}, dtb {dtb:#x})", env!("CARGO_PKG_VERSION"));
+
+    #[cfg(feature = "test")]
+    tests::run();
+
+    #[cfg(not(feature = "test"))]
     shutdown::shutdown(0)
 }
 

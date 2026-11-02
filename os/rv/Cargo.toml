@@ -10,3 +10,14 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+
+[features]
+# boots into the in-kernel test runner instead of rust_main's normal path: `cargo ktest`
+test = []
+
+[[bin]]
+name = "rv"
+path = "src/main.rs"
+# the std test harness can't build for no_std; tests run in QEMU via `cargo ktest`
+test = false
+bench = false

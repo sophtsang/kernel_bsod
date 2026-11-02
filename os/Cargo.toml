@@ -1,3 +1,5 @@
 [workspace]
 resolver = "3"
-members = ["kernel", "shell", "kernel-wasm"]
+members = ["kernel", "shell", "kernel-wasm", "wm"]
+# rv is a bare-metal riscv64 kernel with its own target; build it from os/rv
+exclude = ["rv"]
