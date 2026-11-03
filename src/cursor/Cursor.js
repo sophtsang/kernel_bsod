@@ -25,7 +25,7 @@ const Cursor = ({width, screenWidth}) => {
                 position: 'fixed',
                 left: `${pos.x}px`,
                 top: `${pos.y}px`,
-                width: cursorWidth * (width / screenWidth) / 4, // adjust to your asset size
+                width: cursorWidth * (width / screenWidth) / 3, // adjust to your asset size
                 // height: '12px'
                 pointerEvents: 'none', // lets clicks pass through
                 zIndex: 9999

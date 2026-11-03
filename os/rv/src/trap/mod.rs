@@ -1,7 +1,7 @@
 mod context;
 
 pub use context::TrapContext;
-
+use crate::timer;
 use core::arch::global_asm;
 
 use crate::arch;
@@ -14,6 +14,7 @@ unsafe extern "C" {
 
 const SCAUSE_INTERRUPT: usize = 1 << 63;
 const EXC_BREAKPOINT: usize = 3;
+const IRQ_SUPERVISOR_TIMER: usize = 5;
 
 pub fn init() {
     arch::write_stvec(__trap_entry as usize);
@@ -29,6 +30,9 @@ extern "C" fn trap_handler(ctx: &mut TrapContext) {
         (false, EXC_BREAKPOINT) => {
             println!("breakpoint at {:#x}", ctx.sepc);
             ctx.sepc += instruction_len(ctx.sepc);
+        },
+        (true, IRQ_SUPERVISOR_TIMER) => {
+            handle_timer_interrupt(ctx);
         }
         _ => panic!(
             "unhandled trap: interrupt={is_interrupt} code={code} sepc={:#x} stval={:#x}",
@@ -36,6 +40,11 @@ extern "C" fn trap_handler(ctx: &mut TrapContext) {
             arch::read_stval()
         ),
     }
+}
+
+// timer::on_tick, then (once tasks exist) preempt: task::yield_now
+fn handle_timer_interrupt(ctx: &mut TrapContext) {
+    timer::on_tick();
 }
 
 // low two bits 0b11 = full 4-byte instruction, anything else = 2-byte compressed
