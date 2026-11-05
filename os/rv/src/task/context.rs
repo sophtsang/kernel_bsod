@@ -23,6 +23,6 @@ impl TaskContext {
 
     // context for a task that has never run: __switch "returns" into `entry` on `stack_top`
     pub fn new_task(entry: usize, stack_top: usize) -> Self {
-        Self { ra: entry, sp: stack_top }
+        Self { ra: entry, sp: stack_top, s: [0; 12] }
     } 
 }

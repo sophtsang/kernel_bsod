@@ -2,6 +2,7 @@ mod context;
 
 pub use context::TrapContext;
 use crate::timer;
+use crate::task;
 use core::arch::global_asm;
 
 use crate::arch;
@@ -45,6 +46,7 @@ extern "C" fn trap_handler(ctx: &mut TrapContext) {
 // timer::on_tick, then (once tasks exist) preempt: task::yield_now
 fn handle_timer_interrupt(ctx: &mut TrapContext) {
     timer::on_tick();
+    task::on_tick(); // charges the running task; yields only if it's past the smallest Ready one
 }
 
 // low two bits 0b11 = full 4-byte instruction, anything else = 2-byte compressed

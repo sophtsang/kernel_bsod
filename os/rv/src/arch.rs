@@ -56,3 +56,20 @@ pub fn disable_interrupts_saving() -> bool {
 pub fn wait_for_interrupt() {
     unsafe { asm!("wfi", options(nomem, nostack)) };
 }
+
+const SIE_STIE: usize = 1 << 5;
+
+// cycles of the platform timer; 10 MHz on QEMU virt (timebase-frequency in the device tree)
+pub fn read_time() -> u64 {
+    let value: u64;
+    unsafe { asm!("csrr {}, time", out(reg) value, options(nomem, nostack)) };
+    value
+}
+
+pub fn enable_timer_interrupt() {
+    unsafe { asm!("csrs sie, {}", in(reg) SIE_STIE) };
+}
+
+pub fn disable_timer_interrupt() {
+    unsafe { asm!("csrc sie, {}", in(reg) SIE_STIE) };
+}

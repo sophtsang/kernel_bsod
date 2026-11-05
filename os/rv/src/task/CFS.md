@@ -103,3 +103,36 @@ extern "C" fn task_start() -> ! {
     todo!()
 }
 ```
+
+
+we spawn a task with TaskState Ready and update tm.tasks. on every tick, we check whether the currently task with Running state has vruntime + dt > tm.min_vruntime (= min runtime of Ready tasks), if the Running task has updated vruntime > runtime of Ready tasks, then add the Running task back into tm,tasks, have its state = Running, pop the Ready task with min runtime and update tm.vruntime as the next smallest runtime, then I wouldn't have to compute smallest Ready vruntime on every on_tick call, only when the Running task is preempted.
+
+This exploits the nature that the vruntimes of the set of Ready tasks change ONLY if the set is modified. 
+
+How /task/mod.rs works and how context switching works, here we are examining the lifecycle of task_i:
+
+When we spawn a new task_i, we have to obtain the lock of the taskmanager in order to actually be able to write to it w/o race conditions.
+so TASK_MANAGER.lock() in spawn()
+then find a slot in tasks that is Unused or Exited, and add this new task to that slot
+
+we also need to build the context of this task, which includes ra: addr of which the task's entry or actual executable code is stored
+
+more in depth about ra: task_start as usize, is that ra is actually the addr to the task_start() executable, -> so when this task is running, in asm we have smth like jump(task_start), where in asm this jumps to branch w/ __task_start: ... jump(entry) ... return
+
+task_start works along the lines of:
+disable interrupts, no preempting:
+lock and get task manager guard, deref to get tm
+task_start() is only called when the given task is Running, so it should be accessed via tm.running_id
+then we get the fn() entry of that task, 
+drop the guard, enable interrupts
+
+actually run entry() until it preempts, or exits -> exit_current()
+
+the idea here is that if we context switch to a different task via yield_now() -> schedule(), the **ra** is set as the addr after the last executed line in the yielded task
+you can kind of think about this like recursive stack, eventually when all the prempted / recursed tasks have yieled OR we context switch back to task_i, then we will return back to **ra**, and then continue executing task_i after the last finished line -> until finally exit_current, and task_i.state == TaskState::Exited
+
+
+sp: top of the kernel_stack that consists of all the task frames: offset to actual task is its index in tasks[] * (KERNEL_STACK_SIZE / MAX_TASKS)
+
+vruntime of this newly spawned task is the min of current Running task's vruntime or min vruntime of Ready tasks: no going below either number
+

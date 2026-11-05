@@ -35,6 +35,13 @@ pub fn _print(args: fmt::Arguments) {
     UART.lock().write_fmt(args).unwrap();
 }
 
+// for the panic handler: writes to the UART without taking UART's lock, so a panic
+// while the lock is held still gets printed
+pub fn _print_unlocked(args: fmt::Arguments) {
+    use fmt::Write;
+    let _ = Uart.write_fmt(args);
+}
+
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => { $crate::uart::_print(format_args!($($arg)*)) };
