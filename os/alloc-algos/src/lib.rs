@@ -17,18 +17,70 @@ impl FreeHole {
         }
     }
 
-    // pub fn traverse_on_id(&self, id) -> Option<NonNull<usize>> {
-    //     // if self.id == id {
-    //     //     return Some(self)
-    //     // }
-    //     // if let Some(next) = self.next {
-    //     //     next.traverse_on_id(id);
-    //     // }
-    //     // None
-    //     todo!("deactivate")
-    // }
+    // frees the block_size bytes at ptr, walking from self: any free hole (or the dummy head)
+    // that lies before ptr. Err if the block overlaps a free hole (double free or wrong layout)
+    pub fn deallocate(&mut self, ptr: NonNull<u8>, block_size: usize) -> Result<(), ()> {
+        let mut prev = self as *mut FreeHole;
+        let mut curr_opt = self.next_free;
+        let addr = ptr.as_ptr() as usize;
+        while let Some(mut curr_ptr) = curr_opt && (curr_ptr.as_ptr() as usize) < addr {
+            // traversing until find curr_ptr > ptr
+            let curr = unsafe { curr_ptr.as_mut() }; // &mut FreeHole
+            prev = curr;
+            curr_opt = curr.next_free;
+        }
 
-    pub fn traverse_on_size(&mut self, mut prev: *mut FreeHole, size: usize, align: usize) -> Option<NonNull<u8>> {
+        // the cases
+        let curr = curr_opt.map(|mut p| unsafe { p.as_mut() });
+        let curr_ptr = curr_opt.map_or(0, |p| p.as_ptr() as usize);
+        let prev_ptr = prev as usize;
+        // real holes are always >= size_of::<FreeHole>(), so size 0 means prev is the dummy head,
+        // which is never merged into
+        let prev_size = unsafe { (*prev).size };
+
+        let left_free = prev_size > 0 && prev_ptr + prev_size == addr;
+        let right_free = curr.is_some() && curr_ptr == addr + block_size;
+
+        if (prev_size > 0 && prev_ptr + prev_size > addr)
+            || (curr.is_some() && addr + block_size > curr_ptr) {
+            // thewe are pointing to FreeHole
+            return Err(());
+        }
+
+        // we know [prev][...][Alloc][...][curr] now, s.t. we can do linked
+        // list shenanigans
+        // case 1: both neighbors are free
+        match (left_free, right_free) {
+            (true, true) => {
+                // we have [prev][Alloc][curr] => [     free     ]
+                unsafe { (*prev).size += block_size + curr.as_ref().unwrap().size;
+                (*prev).next_free = curr.as_ref().unwrap().next_free; }
+            }
+            (true, false) => {
+                // we have [prev][Alloc][Alloc][curr] => [  free  ][Alloc][curr]
+                // literally prev just swallows alloc
+                unsafe { (*prev).size += block_size; }
+            }
+            (false, true) => {
+                // we have [prev][Alloc][Alloc][curr] => [prev][Alloc][  free  ]
+                // literally curr swallows alloc
+                let mut new_free = FreeHole::new(block_size + curr.as_ref().unwrap().size);
+                unsafe { new_free.next_free = curr.as_ref().unwrap().next_free;
+                        (ptr.as_ptr() as *mut FreeHole).write(new_free);
+                        (*prev).next_free = NonNull::new(ptr.as_ptr() as *mut FreeHole) };
+            }
+            (false, false) => {
+                // we have [prev][Alloc][Alloc][Alloc][curr] => [prev][Alloc][free][Alloc][curr]
+                let mut new_free = FreeHole::new(block_size);
+                unsafe { new_free.next_free = curr_opt;
+                        (ptr.as_ptr() as *mut FreeHole).write(new_free);
+                        (*prev).next_free = NonNull::new(ptr.as_ptr() as *mut FreeHole) };
+            }
+        }
+        Ok(())
+    }
+
+    pub fn allocate(&mut self, mut prev: *mut FreeHole, size: usize, align: usize) -> Option<NonNull<u8>> {
         let align = max(align, align_of::<FreeHole>());
         let mut curr_opt = Some(NonNull::from(self));
         while let Some(mut curr_ptr) = curr_opt { // iterating through the FreeHoles
@@ -114,9 +166,9 @@ impl Memory {
         self.mem_end = aligned_addr + aligned_size;
 
         let ptr = aligned_addr as *mut FreeHole; // this pointer is pointing to the address aligned_addr
-        ptr.write(FreeHole::new(aligned_size));
+        unsafe { ptr.write(FreeHole::new(aligned_size)) };
         // the dummy head is now contain the addr of the actual first free head
-        self.free_head.next_free = NonNull::new(unsafe { ptr });
+        self.free_head.next_free = NonNull::new(ptr);
     }
 
     // an example of how allocation modifies memory distribution:
@@ -133,7 +185,7 @@ impl Memory {
         // all blocks in Memory are guaranteed to be aligned
         if let Some(mut first_free) = self.free_head.next_free {
             // deference the pointer
-            if let Some(addr) = unsafe { first_free.as_mut().traverse_on_size(&mut self.free_head as *mut FreeHole, block_size, layout.align()) } {
+            if let Some(addr) = unsafe { first_free.as_mut().allocate(&mut self.free_head as *mut FreeHole, block_size, layout.align()) } {
                 self.alloc_size += block_size;
                 return Ok(addr);
             }
@@ -141,10 +193,21 @@ impl Memory {
         Err(())
     }
 
-    // deallocating an allocated block: [Alloc], each alloc has an id
+    // deallocating an allocated block: [Alloc], given its addr
     // before: [FreeHole][Alloc][Alloc    ][FreeHole]
     // after:  [FreeHole       ][Alloc    ][FreeHole]
-    pub unsafe fn deallocate(&mut self, layout: Layout) -> bool {
-        todo!("deallocate")
+    pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) {
+        // no need to align, all alloc addrs should be returned via some
+        // prior allocate call, meaning that the addr is aligned
+        let block_size = Self::get_aligned(max(layout.size(), size_of::<FreeHole>()), align_of::<FreeHole>());
+        // start the walk at the dummy head: covers every hole, and works when the list is empty
+        match self.free_head.deallocate(ptr, block_size) {
+            Ok(_) => { self.alloc_size -= block_size; },
+            Err(_) => {}
+        }
     }
 }
+
+// SpinLock allows T: Send only. sound: the raw pointers only point into the heap region this
+// Memory owns, and the lock serializes every access to them
+unsafe impl Send for Memory {}
