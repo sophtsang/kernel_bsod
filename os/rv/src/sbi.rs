@@ -25,6 +25,7 @@ fn sbi_call(eid: usize, fid: usize, arg0: usize) -> SbiRet {
 }
 
 // fires a supervisor timer interrupt once `time` >= deadline; also clears a pending one
+// schedules the next timer interrupt
 pub fn set_timer(deadline: u64) -> SbiRet {
     sbi_call(EID_TIME, FID_SET_TIMER, deadline as usize)
 }

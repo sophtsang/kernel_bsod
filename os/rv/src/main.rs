@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 #[macro_use]
 mod uart;
 mod shutdown;
@@ -12,6 +14,8 @@ mod trap;
 mod sbi;
 mod timer;
 mod task;
+mod config;
+mod mm;
 #[cfg(not(feature = "test"))]
 mod demo;
 
@@ -35,6 +39,7 @@ fn clear_bss() {
 #[unsafe(no_mangle)]
 extern "C" fn rust_main(hart_id: usize, dtb: usize) -> ! {
     clear_bss();
+    mm::init(); // after clear_bss: the heap lives in .bss
     trap::init();
     println!("kernel_bsod rv {} (hart {hart_id}, dtb {dtb:#x})", env!("CARGO_PKG_VERSION"));
 

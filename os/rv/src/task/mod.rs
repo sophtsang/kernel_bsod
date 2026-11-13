@@ -227,6 +227,10 @@ pub fn exit_current() -> ! {
     crate::shutdown::shutdown(0)
 }
 
+fn reap_zombies() {
+    {}
+}
+
 // picks the next task and calls __switch. the TASK_MANAGER guard must be dropped before
 // __switch (grab the two context pointers first), or the next task deadlocks on it
 fn schedule(mut tm: SpinLockGuard<'_, TaskManager>) {
@@ -251,6 +255,7 @@ fn schedule(mut tm: SpinLockGuard<'_, TaskManager>) {
     // prev_ctx, loads next's ra/sp/s0-s11, and `ret`s into next: wherever it last called
     // __switch, or task_start if it has never run. we resume on the line below only when
     // some later schedule() switches back to prev
+    reap_zombies();
 }
 
 pub fn current_id() -> Option<usize> {
